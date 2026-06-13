@@ -1060,7 +1060,7 @@ function renderLB(type, containerId, label){
     ${sorted.map((p,i)=>{
       const src=p.source==='manual'?'manual':'api';
       const badge=src==='api'
-        ?'<span class="lb-source-badge lb-source-api">API</span>'
+        ?'<span class="lb-source-badge lb-source-api"></span>'
         :'<span class="lb-source-badge lb-source-manual">Manual</span>';
       return `<div class="lb-row">
         <div class="lb-rank lb-rank-${i<3?i+1:''}">${rankSymbol(i)}</div>
