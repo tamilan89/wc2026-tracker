@@ -281,6 +281,13 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
   .groups-grid{grid-template-columns:1fr}
   .header-meta{display:none}
 }
+
+  @media(max-width:600px){
+  .standing-table th,.standing-table td{padding:5px 4px;font-size:11px}
+  .team-name{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+  .flag{font-size:13px}
+  .pts{font-size:12px}
+}
 </style>
 </head>
 <body>
@@ -927,7 +934,10 @@ function renderScores(){
     if(ampm==='PM'&&h!==12)h+=12;
     return h*60+min;
   }
+function statusPriority(s){ return s==='live'?0:s==='upcoming'?1:2; }
   const sorted=[...matches].sort((a,b)=>{
+    const sp=statusPriority(a.status)-statusPriority(b.status);
+    if(sp!==0)return sp;
     const di=dateOrder.indexOf(a.date)-dateOrder.indexOf(b.date);
     if(di!==0)return di;
     return parseTime(a.time)-parseTime(b.time)||a.id-b.id;
