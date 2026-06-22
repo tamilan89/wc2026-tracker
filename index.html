@@ -82,6 +82,20 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
 .section-header .line{flex:1;height:1px;background:var(--border)}
 .section-header .count-badge{background:var(--gold-dim);border:1px solid var(--border-gold);color:var(--gold);font-size:11px;padding:2px 10px;border-radius:99px;font-family:'DM Mono',monospace}
 
+/* AUTO-SYNC STATUS BAR */
+.autosync-bar{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;margin-bottom:18px;flex-wrap:wrap}
+.autosync-label{font-size:10px;color:var(--text-muted);letter-spacing:1.5px;text-transform:uppercase;font-weight:600;white-space:nowrap}
+.autosync-state{display:flex;align-items:center;gap:6px;flex:1}
+.autosync-dot{width:7px;height:7px;border-radius:50%;background:var(--text-dim);flex-shrink:0;transition:background .3s}
+.autosync-dot.syncing{background:var(--gold);animation:pulse 1s infinite}
+.autosync-dot.ok{background:var(--win)}
+.autosync-dot.err{background:var(--lose)}
+.autosync-text{font-size:11px;color:var(--text-muted);font-family:'DM Mono',monospace}
+.autosync-next{font-size:10px;color:var(--text-dim);font-family:'DM Mono',monospace;white-space:nowrap}
+.autosync-manual-btn{padding:5px 13px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border-gold);background:var(--gold-dim);color:var(--gold);font-family:'DM Sans',sans-serif;transition:all .2s;white-space:nowrap}
+.autosync-manual-btn:hover{background:rgba(201,168,76,0.25)}
+.autosync-manual-btn:disabled{opacity:.5;cursor:not-allowed}
+
 /* GROUPS */
 .groups-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
 .group-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s}
@@ -152,7 +166,7 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
 .champion-name{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:var(--text)}
 
 /* STATS BAR */
-.stats-bar{display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap}
+.stats-bar{display:flex;gap:16px;margin-bottom:18px;flex-wrap:wrap}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 20px;flex:1;min-width:120px}
 .stat-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:4px}
 .stat-val{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--gold);letter-spacing:1px}
@@ -281,8 +295,7 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
   .groups-grid{grid-template-columns:1fr}
   .header-meta{display:none}
 }
-
-  @media(max-width:600px){
+@media(max-width:600px){
   .standing-table th,.standing-table td{padding:5px 4px;font-size:11px}
   .team-name{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
   .flag{font-size:13px}
@@ -363,6 +376,18 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
       <div class="stat-card"><div class="stat-label">Goals</div><div class="stat-val" id="stat-goals">0</div><div class="stat-sub">Total scored</div></div>
       <div class="stat-card"><div class="stat-label">Live Now</div><div class="stat-val" id="stat-live">0</div><div class="stat-sub">In progress</div></div>
     </div>
+
+    <!-- AUTO-SYNC STATUS BAR -->
+    <div class="autosync-bar">
+      <span class="autosync-label">🔄 Auto-Sync</span>
+      <div class="autosync-state">
+        <span class="autosync-dot" id="autosync-dot"></span>
+        <span class="autosync-text" id="autosync-text">Waiting for first sync…</span>
+      </div>
+      <span class="autosync-next" id="autosync-next"></span>
+      <button class="autosync-manual-btn" id="autosync-manual-btn" onclick="triggerManualAutoSync()">Sync Now</button>
+    </div>
+
     <div id="scores-container"></div>
   </div>
 
@@ -521,7 +546,6 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
     </div>
 
     <div class="admin-card" style="grid-column:1/-1">
-      <!-- Filter by date -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <div class="form-group" style="margin:0;min-width:220px">
           <label>Filter by Date</label>
@@ -543,15 +567,13 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
 
       <!-- AUTO SYNC CARD (full width) -->
       <div class="sync-card">
-        <h3>🔄 Auto-Sync from football-data.org</h3>
+        <h3>🔄 Manual Sync from football-data.org</h3>
         <div class="sync-info">
-          Fetches <strong style="color:var(--text)">Top Scorers</strong> and <strong style="color:var(--text)">Top Assists</strong> automatically from football-data.org (FIFA World Cup competition) and saves to Firebase.<br>
+          Fetches <strong style="color:var(--text)">Top Scorers</strong> and <strong style="color:var(--text)">Top Assists</strong> from football-data.org. Stats also sync automatically every hour (see the status bar on the Schedule tab).<br>
           <span style="color:var(--gold)">ℹ Free tier: 10 requests/minute. GK Clean Sheets aren't provided — enter those manually below.</span>
-          Each sync is logged with timestamp. Manual entries below act as override — choose merge or overwrite mode.
+          Manual entries act as overrides — choose merge or overwrite mode.
         </div>
 
-
-        <!-- Sync mode selector -->
         <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;font-weight:600;margin-bottom:8px">Sync Mode</div>
         <div class="sync-mode-row">
           <button class="sync-mode-btn active" id="mode-merge" onclick="setSyncMode('merge',this)">🔀 Merge — Keep manual if API has none</button>
@@ -656,12 +678,189 @@ async function fdFetch(endpoint){
 }
 
 // ── SYNC STATE ────────────────────────────────────────────────
-let syncMode      = 'merge';
+let syncMode = 'merge';
 
 function setSyncMode(mode, btn){
   syncMode = mode;
   document.querySelectorAll('.sync-mode-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
+}
+
+// ── AUTO-SYNC ENGINE ─────────────────────────────────────────
+const AUTO_SYNC_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+let autoSyncTimer      = null;
+let autoSyncCountdown  = null;
+let nextSyncAt         = null;  // Date object
+
+function setAutoSyncStatus(state, text){
+  // state: 'idle' | 'syncing' | 'ok' | 'err'
+  const dot  = document.getElementById('autosync-dot');
+  const txtEl = document.getElementById('autosync-text');
+  if(!dot || !txtEl) return;
+  dot.className = 'autosync-dot';
+  if(state === 'syncing') dot.classList.add('syncing');
+  else if(state === 'ok')  dot.classList.add('ok');
+  else if(state === 'err') dot.classList.add('err');
+  txtEl.textContent = text;
+}
+
+function updateAutoSyncCountdown(){
+  const el = document.getElementById('autosync-next');
+  if(!el || !nextSyncAt) return;
+  const diff = nextSyncAt - Date.now();
+  if(diff <= 0){ el.textContent = 'syncing soon…'; return; }
+  const m = Math.floor(diff / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  el.textContent = `next in ${m}m ${String(s).padStart(2,'0')}s`;
+}
+
+function scheduleNextAutoSync(){
+  // Clear any previous timer
+  if(autoSyncTimer)  clearTimeout(autoSyncTimer);
+  if(autoSyncCountdown) clearInterval(autoSyncCountdown);
+
+  nextSyncAt = new Date(Date.now() + AUTO_SYNC_INTERVAL_MS);
+  autoSyncCountdown = setInterval(updateAutoSyncCountdown, 1000);
+  updateAutoSyncCountdown();
+
+  autoSyncTimer = setTimeout(async ()=>{
+    await runAutoSync();
+    scheduleNextAutoSync();
+  }, AUTO_SYNC_INTERVAL_MS);
+}
+
+async function runAutoSync(silent){
+  // silent = called from timer; !silent = user pressed Sync Now in bar
+  const btn = document.getElementById('autosync-manual-btn');
+  if(btn) btn.disabled = true;
+  setAutoSyncStatus('syncing', 'Syncing scores & stats…');
+  try {
+    await autoSyncScores();
+    await autoSyncStatsQuiet();
+    const t = new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
+    setAutoSyncStatus('ok', `Last synced ${t} (MYT)`);
+    // Save sync meta to Firebase
+    await db.ref('wc2026/autoSyncMeta').set({
+      lastSync: new Date().toISOString(),
+      lastSyncMYT: new Date().toLocaleString('en-MY',{timeZone:'Asia/Kuala_Lumpur'})
+    });
+    if(!silent) showToast('🔄 Auto-sync complete ✓');
+  } catch(err){
+    setAutoSyncStatus('err', `Sync failed: ${err.message}`);
+    if(!silent) showToast('❌ Auto-sync failed');
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+}
+
+async function triggerManualAutoSync(){
+  await runAutoSync(false);
+  // Reset the hourly timer so next auto-sync is 1h from now
+  scheduleNextAutoSync();
+}
+
+// ── AUTO-SYNC: MATCH SCORES ──────────────────────────────────
+// Maps football-data.org homeTeam.name / awayTeam.name → our team name keys
+const FD_TEAM_MAP = {
+  'Mexico':'Mexico','South Africa':'South Africa','Korea Republic':'South Korea',
+  'Czechia':'Czechia','Czech Republic':'Czechia',
+  'Canada':'Canada','Bosnia and Herzegovina':'Bosnia','Bosnia':'Bosnia',
+  'Qatar':'Qatar','Switzerland':'Switzerland',
+  'Brazil':'Brazil','Morocco':'Morocco','Haiti':'Haiti','Scotland':'Scotland',
+  'United States':'USA','USA':'USA','Paraguay':'Paraguay',
+  'Australia':'Australia','Turkey':'Turkey','Türkiye':'Turkey',
+  'Germany':'Germany','Curaçao':'Curaçao','Ivory Coast':'Ivory Coast',
+  "Côte d'Ivoire":'Ivory Coast','Ecuador':'Ecuador',
+  'Netherlands':'Netherlands','Japan':'Japan','Sweden':'Sweden','Tunisia':'Tunisia',
+  'Belgium':'Belgium','Egypt':'Egypt','Iran':'Iran','New Zealand':'New Zealand',
+  'Spain':'Spain','Cape Verde':'Cape Verde','Saudi Arabia':'Saudi Arabia',
+  'Uruguay':'Uruguay','France':'France','Senegal':'Senegal','Iraq':'Iraq',
+  'Norway':'Norway','Argentina':'Argentina','Algeria':'Algeria',
+  'Austria':'Austria','Jordan':'Jordan',
+  'Portugal':'Portugal','DR Congo':'DR Congo',
+  'Democratic Republic of Congo':'DR Congo',
+  'Uzbekistan':'Uzbekistan','Colombia':'Colombia',
+  'England':'England','Croatia':'Croatia','Ghana':'Ghana','Panama':'Panama',
+};
+
+async function autoSyncScores(){
+  // Fetch all WC2026 matches from football-data.org
+  const data = await fdFetch('competitions/WC/matches?season=2026');
+  const apiMatches = data.matches || [];
+
+  if(!apiMatches.length) return; // Nothing yet
+
+  let changed = false;
+
+  apiMatches.forEach(apiM => {
+    // Only process FINISHED or IN_PLAY matches
+    const status = apiM.status; // 'SCHEDULED','TIMED','IN_PLAY','PAUSED','FINISHED','SUSPENDED','POSTPONED','CANCELLED'
+    if(status !== 'FINISHED' && status !== 'IN_PLAY' && status !== 'PAUSED') return;
+
+    const homeRaw = apiM.homeTeam?.name || '';
+    const awayRaw = apiM.awayTeam?.name || '';
+    const home = FD_TEAM_MAP[homeRaw] || homeRaw;
+    const away = FD_TEAM_MAP[awayRaw] || awayRaw;
+
+    const homeScore = apiM.score?.fullTime?.home ?? null;
+    const awayScore = apiM.score?.fullTime?.away ?? null;
+
+    if(homeScore === null || awayScore === null) return;
+
+    // Find matching local match by home+away team names
+    const localMatch = matches.find(m =>
+      m.home === home && m.away === away
+    );
+    if(!localMatch) return;
+
+    // Only update if data actually changed
+    const newStatus = (status === 'FINISHED') ? 'finished' : 'live';
+    if(localMatch.homeScore !== homeScore ||
+       localMatch.awayScore !== awayScore ||
+       localMatch.status !== newStatus){
+      localMatch.homeScore = homeScore;
+      localMatch.awayScore = awayScore;
+      localMatch.status    = newStatus;
+      if(status === 'IN_PLAY' || status === 'PAUSED'){
+        localMatch.liveMin = apiM.minute ? `${apiM.minute}'` : '';
+      }
+      changed = true;
+    }
+  });
+
+  if(changed){
+    lastUpdated = new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
+    document.getElementById('last-updated').textContent = lastUpdated;
+    // Save updated matches to Firebase
+    await db.ref('wc2026/matches').set(matches);
+    await db.ref('wc2026/updated').set(lastUpdated);
+    renderAll();
+    if(adminUnlocked) populateAdminSelect();
+  }
+}
+
+// ── AUTO-SYNC: STATS (silent, uses same logic as manual) ─────
+async function autoSyncStatsQuiet(){
+  const fdScorers = await fdFetch('competitions/WC/scorers?limit=20&season=2026');
+  const apiScorers = (fdScorers.scorers||[]).map(p=>({
+    name:p.player?.name||'',team:p.team?.name||'',
+    value:p.goals||0,source:'api'
+  })).filter(p=>p.value>0);
+
+  if(apiScorers.length > 0) mergeStats('goals', apiScorers);
+
+  const apiAssists = (fdScorers.scorers||[]).map(p=>({
+    name:p.player?.name||'',team:p.team?.name||'',
+    value:p.assists||0,source:'api'
+  })).filter(p=>p.value>0).sort((a,b)=>b.value-a.value);
+
+  if(apiAssists.length > 0) mergeStats('assists', apiAssists);
+
+  if(apiScorers.length > 0 || apiAssists.length > 0){
+    await db.ref('wc2026/stats').set(statsData);
+    renderStats();
+    renderStatEntryLists();
+  }
 }
 
 // ── COUNTDOWN ─────────────────────────────────────────────────
@@ -803,7 +1002,7 @@ function genMatches(){
 let matches    = null;
 let bracket    = null;
 let statsData  = { goals:[], assists:[], cs:[] };
-let channelData = {}; // matchId -> { okey: bool, sukan: bool, rtmklik: bool, delayed: bool }
+let channelData = {};
 let lastUpdated = '—';
 
 function save(){
@@ -934,7 +1133,7 @@ function renderScores(){
     if(ampm==='PM'&&h!==12)h+=12;
     return h*60+min;
   }
-function statusPriority(s){ return s==='live'?0:s==='upcoming'?1:2; }
+  function statusPriority(s){ return s==='live'?0:s==='upcoming'?1:2; }
   const sorted=[...matches].sort((a,b)=>{
     const sp=statusPriority(a.status)-statusPriority(b.status);
     if(sp!==0)return sp;
@@ -992,6 +1191,7 @@ function scoreStr(m,side){
   if(m.penalties&&penScore!==null)s+=` <span class="pen-label">(${penScore})</span>`;
   return s;
 }
+
 function renderBracket(){
   const c=document.getElementById('bracket-container');
   const rounds=['r32','r16','qf','sf'];
@@ -1213,9 +1413,7 @@ function mergeStats(type, apiEntries){
       const manualIdx = statsData[type].findIndex(e =>
         e.name.toLowerCase() === apiEntry.name.toLowerCase() && e.source === 'manual'
       );
-      if(manualIdx >= 0){
-        syncLog(`  ↳ Kept manual override: ${statsData[type][manualIdx].name}`, 'var(--gold)');
-      } else {
+      if(manualIdx < 0){
         const existingIdx = statsData[type].findIndex(e => e.name.toLowerCase() === apiEntry.name.toLowerCase());
         if(existingIdx >= 0){statsData[type][existingIdx] = apiEntry;}
         else{statsData[type].push(apiEntry);}
@@ -1237,7 +1435,7 @@ async function syncFromAPIFootball(){
   try {
     syncLog(`Mode: ${syncMode}`, 'var(--blue-acc)');
     syncLog('Fetching top scorers & assists (football-data.org)...');
-    const fdScorers = await fdFetch(`competitions/WC/scorers?limit=20`);
+    const fdScorers = await fdFetch(`competitions/WC/scorers?limit=20&season=2026`);
     const apiScorers = (fdScorers.scorers||[]).map(p=>({
       name:p.player?.name||'',team:p.team?.name||'',
       value:p.goals||0,source:'api'
@@ -1252,9 +1450,7 @@ async function syncFromAPIFootball(){
     if(apiAssists.length===0){syncLog('⚠ No assist data yet','var(--draw)');}
     else{mergeStats('assists',apiAssists);syncLog(`✓ Assists: ${apiAssists.length} players`,'var(--win)');}
 
-
     syncLog('ℹ GK clean sheets: enter manually (not provided by football-data.org free tier)','var(--text-muted)');
-
 
     syncLog('Saving to Firebase...');
     await db.ref('wc2026/stats').set(statsData);
@@ -1437,7 +1633,6 @@ function renderChannelAdmin(){
   const container = document.getElementById('channel-admin-list');
   if(!container) return;
 
-  // Populate date filter
   const dateFilter = document.getElementById('ch-date-filter');
   const dateOrder=['Jun 12','Jun 13','Jun 14','Jun 15','Jun 16','Jun 17','Jun 18','Jun 19','Jun 20','Jun 21','Jun 22','Jun 23','Jun 24','Jun 25','Jun 26','Jun 27','Jun 28'];
   if(dateFilter.options.length<=1){
@@ -1559,7 +1754,11 @@ db.ref('wc2026').on('value',snap=>{
     }
     if(data.syncMeta&&data.syncMeta.lastSyncMYT){
       document.getElementById('sync-last-time').textContent=
-        `Last API sync: ${data.syncMeta.lastSyncMYT} · Mode: ${data.syncMeta.mode||'—'}`;
+        `Last manual sync: ${data.syncMeta.lastSyncMYT} · Mode: ${data.syncMeta.mode||'—'}`;
+    }
+    // Restore auto-sync timestamp if available
+    if(data.autoSyncMeta&&data.autoSyncMeta.lastSyncMYT){
+      setAutoSyncStatus('ok', `Last synced ${data.autoSyncMeta.lastSyncMYT} (MYT)`);
     }
   } else {
     matches=genMatches();
@@ -1574,6 +1773,17 @@ db.ref('wc2026').on('value',snap=>{
   if(document.getElementById('panel-admin').classList.contains('active')){
     populateAdminSelect();
     renderChannelAdmin();
+  }
+
+  // ── START AUTO-SYNC (once, after data first loads) ──────────
+  // Only start once; Firebase listener fires on every change
+  if(!autoSyncTimer && !autoSyncCountdown){
+    // Run first sync after 5 seconds, then every hour
+    setAutoSyncStatus('idle','Starting first sync in 5 s…');
+    setTimeout(async ()=>{
+      await runAutoSync(true);
+      scheduleNextAutoSync();
+    }, 5000);
   }
 });
 </script>
