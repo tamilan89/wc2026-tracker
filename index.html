@@ -385,7 +385,6 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
         <span class="autosync-text" id="autosync-text">Waiting for first sync…</span>
       </div>
       <span class="autosync-next" id="autosync-next"></span>
-      <button class="autosync-manual-btn" id="autosync-manual-btn" onclick="triggerManualAutoSync()">Sync Now</button>
     </div>
 
     <div id="scores-container"></div>
@@ -581,7 +580,8 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
         </div>
 
         <div class="sync-controls">
-          <button class="sync-btn" id="sync-now-btn" onclick="syncFromAPIFootball()">⚡ Sync Now</button>
+          <button class="sync-btn" id="sync-now-btn" onclick="syncFromAPIFootball()">⚡ Sync Stats Now</button>
+          <button class="sync-btn" id="autosync-manual-btn" onclick="triggerManualAutoSync()" style="border-color:rgba(201,168,76,0.4);background:var(--gold-dim);color:var(--gold)">🔄 Sync Scores + Stats</button>
           <div class="sync-status" id="sync-status"></div>
         </div>
 
@@ -730,7 +730,7 @@ function scheduleNextAutoSync(){
 }
 
 async function runAutoSync(silent){
-  // silent = called from timer; !silent = user pressed Sync Now in bar
+  // silent = called from timer; !silent = user pressed Sync Now in admin
   const btn = document.getElementById('autosync-manual-btn');
   if(btn) btn.disabled = true;
   setAutoSyncStatus('syncing', 'Syncing scores & stats…');
