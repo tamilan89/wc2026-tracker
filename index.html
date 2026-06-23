@@ -524,6 +524,7 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
           </select>
         </div>
         <button class="btn btn-primary" onclick="updateBracket()">Update Bracket</button>
+        <button class="btn btn-danger btn-gap" onclick="resetBracket()">🗑 Reset Entire Bracket to TBD</button>
       </div>
 
     </div>
@@ -1548,6 +1549,15 @@ function updateBracket(){
   save();renderAll();showToast('Bracket updated ✓');populateBracketSlots();
 }
 
+function resetBracket(){
+  if(!confirm('Reset ALL bracket rounds to TBD? This cannot be undone.'))return;
+  bracket = initBracket();
+  db.ref('wc2026/bracket').set(bracket);
+  renderAll();
+  populateBracketSlots();
+  showToast('🗑 Bracket reset to TBD ✓');
+}
+  
 function quickEdit(id){
   if(!adminUnlocked){showToast('🔒 Please unlock admin first');return;}
   showTab('admin',document.querySelector('.tab-btn:nth-child(5)'));
