@@ -384,7 +384,6 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
         <span class="autosync-dot" id="autosync-dot"></span>
         <span class="autosync-text" id="autosync-text">Waiting for first sync…</span>
       </div>
-     
     </div>
 
     <div id="scores-container"></div>
@@ -524,6 +523,45 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
           </select>
         </div>
         <button class="btn btn-primary" onclick="updateBracket()">Update Bracket</button>
+      </div>
+
+      <!-- ── AUTO-CALCULATE BRACKET CARD (NEW) ── -->
+      <div class="admin-card" style="grid-column:1/-1;border-color:rgba(201,168,76,0.3);background:linear-gradient(135deg,rgba(201,168,76,0.05),transparent)">
+        <h3>🤖 Auto-Calculate Bracket from Group Results</h3>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:16px;line-height:1.7">
+          Automatically fills the <strong style="color:var(--text)">Round of 32</strong> based on current group standings (top 2 from each group + 8 best 3rd-place teams),
+          then propagates winners through <strong style="color:var(--text)">R16 → QF → SF → Final</strong>.<br>
+          <span style="color:var(--gold)">ℹ Uses official FIFA WC2026 bracket pairings. 3rd-place teams assigned per Annex C pool logic (best-available from each slot's eligible groups).</span>
+          Existing match scores &amp; winners are preserved — only unfilled team name slots are updated.
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+          <button class="btn btn-primary" style="width:auto;padding:10px 28px;font-size:14px" onclick="computeBracketFromGroups()">
+            ⚡ Auto-Fill Bracket
+          </button>
+          <button class="btn btn-blue" style="width:auto;padding:10px 20px" onclick="propagateKnockoutWinners();save();renderAll();showToast('Winners propagated ✓')">
+            🔗 Re-propagate Winners Only
+          </button>
+          <span style="font-size:11px;color:var(--text-dim);font-family:'DM Mono',monospace">Run after entering all group results</span>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 16px;font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;line-height:2.1">
+          <span style="color:var(--gold);font-size:11px;font-weight:700">R32 Fixed Pairings (FIFA official bracket):</span><br>
+          M73: <span style="color:var(--text)">A2</span> vs <span style="color:var(--text)">B2</span> &nbsp;·&nbsp;
+          M74: <span style="color:var(--text)">E1</span> vs <span style="color:var(--draw)">3rd(A/B/C/D/F)</span> &nbsp;·&nbsp;
+          M75: <span style="color:var(--text)">F1</span> vs <span style="color:var(--text)">C2</span> &nbsp;·&nbsp;
+          M76: <span style="color:var(--text)">C1</span> vs <span style="color:var(--text)">F2</span><br>
+          M77: <span style="color:var(--text)">I1</span> vs <span style="color:var(--draw)">3rd(C/D/F/G/H)</span> &nbsp;·&nbsp;
+          M78: <span style="color:var(--text)">E2</span> vs <span style="color:var(--text)">I2</span> &nbsp;·&nbsp;
+          M79: <span style="color:var(--text)">A1</span> vs <span style="color:var(--draw)">3rd(C/E/F/H/I)</span> &nbsp;·&nbsp;
+          M80: <span style="color:var(--text)">L1</span> vs <span style="color:var(--draw)">3rd(E/H/I/J/K)</span><br>
+          M81: <span style="color:var(--text)">B1</span> vs <span style="color:var(--draw)">3rd(E/F/G/I/J)</span> &nbsp;·&nbsp;
+          M82: <span style="color:var(--text)">G1</span> vs <span style="color:var(--draw)">3rd(A/E/H/I/J)</span> &nbsp;·&nbsp;
+          M83: <span style="color:var(--text)">D2</span> vs <span style="color:var(--text)">G2</span> &nbsp;·&nbsp;
+          M84: <span style="color:var(--text)">H1</span> vs <span style="color:var(--text)">J2</span><br>
+          M85: <span style="color:var(--text)">J1</span> vs <span style="color:var(--text)">H2</span> &nbsp;·&nbsp;
+          M86: <span style="color:var(--text)">K1</span> vs <span style="color:var(--draw)">3rd(D/E/I/J/L)</span> &nbsp;·&nbsp;
+          M87: <span style="color:var(--text)">K2</span> vs <span style="color:var(--text)">L2</span> &nbsp;·&nbsp;
+          M88: <span style="color:var(--text)">D1</span> vs <span style="color:var(--draw)">3rd(B/E/F/I/J)</span>
+        </div>
       </div>
 
     </div>
@@ -687,13 +725,12 @@ function setSyncMode(mode, btn){
 }
 
 // ── AUTO-SYNC ENGINE ─────────────────────────────────────────
-const AUTO_SYNC_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const AUTO_SYNC_INTERVAL_MS = 60 * 60 * 1000;
 let autoSyncTimer      = null;
 let autoSyncCountdown  = null;
-let nextSyncAt         = null;  // Date object
+let nextSyncAt         = null;
 
 function setAutoSyncStatus(state, text){
-  // state: 'idle' | 'syncing' | 'ok' | 'err'
   const dot  = document.getElementById('autosync-dot');
   const txtEl = document.getElementById('autosync-text');
   if(!dot || !txtEl) return;
@@ -715,14 +752,11 @@ function updateAutoSyncCountdown(){
 }
 
 function scheduleNextAutoSync(){
-  // Clear any previous timer
   if(autoSyncTimer)  clearTimeout(autoSyncTimer);
   if(autoSyncCountdown) clearInterval(autoSyncCountdown);
-
   nextSyncAt = new Date(Date.now() + AUTO_SYNC_INTERVAL_MS);
   autoSyncCountdown = setInterval(updateAutoSyncCountdown, 1000);
   updateAutoSyncCountdown();
-
   autoSyncTimer = setTimeout(async ()=>{
     await runAutoSync();
     scheduleNextAutoSync();
@@ -730,7 +764,6 @@ function scheduleNextAutoSync(){
 }
 
 async function runAutoSync(silent){
-  // silent = called from timer; !silent = user pressed Sync Now in admin
   const btn = document.getElementById('autosync-manual-btn');
   if(btn) btn.disabled = true;
   setAutoSyncStatus('syncing', 'Syncing scores & stats…');
@@ -739,7 +772,6 @@ async function runAutoSync(silent){
     await autoSyncStatsQuiet();
     const t = new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
     setAutoSyncStatus('ok', `Last synced ${t} (MYT)`);
-    // Save sync meta to Firebase
     await db.ref('wc2026/autoSyncMeta').set({
       lastSync: new Date().toISOString(),
       lastSyncMYT: new Date().toLocaleString('en-MY',{timeZone:'Asia/Kuala_Lumpur'})
@@ -755,12 +787,10 @@ async function runAutoSync(silent){
 
 async function triggerManualAutoSync(){
   await runAutoSync(false);
-  // Reset the hourly timer so next auto-sync is 1h from now
   scheduleNextAutoSync();
 }
 
 // ── AUTO-SYNC: MATCH SCORES ──────────────────────────────────
-// Maps football-data.org homeTeam.name / awayTeam.name → our team name keys
 const FD_TEAM_MAP = {
   'Mexico':'Mexico','South Africa':'South Africa','Korea Republic':'South Korea',
   'Czechia':'Czechia','Czech Republic':'Czechia',
@@ -784,40 +814,24 @@ const FD_TEAM_MAP = {
 };
 
 async function autoSyncScores(){
-  // Fetch all WC2026 matches from football-data.org
   const data = await fdFetch('competitions/WC/matches?season=2026');
   const apiMatches = data.matches || [];
-
-  if(!apiMatches.length) return; // Nothing yet
-
+  if(!apiMatches.length) return;
   let changed = false;
-
   apiMatches.forEach(apiM => {
-    // Only process FINISHED or IN_PLAY matches
-    const status = apiM.status; // 'SCHEDULED','TIMED','IN_PLAY','PAUSED','FINISHED','SUSPENDED','POSTPONED','CANCELLED'
+    const status = apiM.status;
     if(status !== 'FINISHED' && status !== 'IN_PLAY' && status !== 'PAUSED') return;
-
     const homeRaw = apiM.homeTeam?.name || '';
     const awayRaw = apiM.awayTeam?.name || '';
     const home = FD_TEAM_MAP[homeRaw] || homeRaw;
     const away = FD_TEAM_MAP[awayRaw] || awayRaw;
-
     const homeScore = apiM.score?.fullTime?.home ?? null;
     const awayScore = apiM.score?.fullTime?.away ?? null;
-
     if(homeScore === null || awayScore === null) return;
-
-    // Find matching local match by home+away team names
-    const localMatch = matches.find(m =>
-      m.home === home && m.away === away
-    );
+    const localMatch = matches.find(m => m.home === home && m.away === away);
     if(!localMatch) return;
-
-    // Only update if data actually changed
     const newStatus = (status === 'FINISHED') ? 'finished' : 'live';
-    if(localMatch.homeScore !== homeScore ||
-       localMatch.awayScore !== awayScore ||
-       localMatch.status !== newStatus){
+    if(localMatch.homeScore !== homeScore || localMatch.awayScore !== awayScore || localMatch.status !== newStatus){
       localMatch.homeScore = homeScore;
       localMatch.awayScore = awayScore;
       localMatch.status    = newStatus;
@@ -827,11 +841,9 @@ async function autoSyncScores(){
       changed = true;
     }
   });
-
   if(changed){
     lastUpdated = new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
     document.getElementById('last-updated').textContent = lastUpdated;
-    // Save updated matches to Firebase
     await db.ref('wc2026/matches').set(matches);
     await db.ref('wc2026/updated').set(lastUpdated);
     renderAll();
@@ -839,23 +851,18 @@ async function autoSyncScores(){
   }
 }
 
-// ── AUTO-SYNC: STATS (silent, uses same logic as manual) ─────
 async function autoSyncStatsQuiet(){
   const fdScorers = await fdFetch('competitions/WC/scorers?limit=20&season=2026');
   const apiScorers = (fdScorers.scorers||[]).map(p=>({
     name:p.player?.name||'',team:p.team?.name||'',
     value:p.goals||0,source:'api'
   })).filter(p=>p.value>0);
-
   if(apiScorers.length > 0) mergeStats('goals', apiScorers);
-
   const apiAssists = (fdScorers.scorers||[]).map(p=>({
     name:p.player?.name||'',team:p.team?.name||'',
     value:p.assists||0,source:'api'
   })).filter(p=>p.value>0).sort((a,b)=>b.value-a.value);
-
   if(apiAssists.length > 0) mergeStats('assists', apiAssists);
-
   if(apiScorers.length > 0 || apiAssists.length > 0){
     await db.ref('wc2026/stats').set(statsData);
     renderStats();
@@ -1442,16 +1449,13 @@ async function syncFromAPIFootball(){
     })).filter(p=>p.value>0);
     if(apiScorers.length===0){syncLog('⚠ No scorer data yet','var(--draw)');}
     else{mergeStats('goals',apiScorers);syncLog(`✓ Scorers: ${apiScorers.length} players`,'var(--win)');}
-
     const apiAssists = (fdScorers.scorers||[]).map(p=>({
       name:p.player?.name||'',team:p.team?.name||'',
       value:p.assists||0,source:'api'
     })).filter(p=>p.value>0).sort((a,b)=>b.value-a.value);
     if(apiAssists.length===0){syncLog('⚠ No assist data yet','var(--draw)');}
     else{mergeStats('assists',apiAssists);syncLog(`✓ Assists: ${apiAssists.length} players`,'var(--win)');}
-
     syncLog('ℹ GK clean sheets: enter manually (not provided by football-data.org free tier)','var(--text-muted)');
-
     syncLog('Saving to Firebase...');
     await db.ref('wc2026/stats').set(statsData);
     await db.ref('wc2026/syncMeta').set({
@@ -1472,6 +1476,185 @@ async function syncFromAPIFootball(){
     btn.disabled=false;btn.textContent='⚡ Sync Now';
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTO-BRACKET CALCULATION ENGINE — WC2026
+// ══════════════════════════════════════════════════════════════════════════════
+
+// R32 Fixed Pairings (FIFA official bracket, per Sky Sports / ESPN / Fox Sports):
+// M73: A2 vs B2          M74: E1 vs 3rd(A/B/C/D/F)
+// M75: F1 vs C2          M76: C1 vs F2
+// M77: I1 vs 3rd(C/D/F/G/H)  M78: E2 vs I2
+// M79: A1 vs 3rd(C/E/F/H/I)  M80: L1 vs 3rd(E/H/I/J/K)
+// M81: B1 vs 3rd(E/F/G/I/J)  M82: G1 vs 3rd(A/E/H/I/J)
+// M83: D2 vs G2          M84: H1 vs J2
+// M85: J1 vs H2          M86: K1 vs 3rd(D/E/I/J/L)
+// M87: K2 vs L2          M88: D1 vs 3rd(B/E/F/I/J)
+
+const R32_SLOTS = [
+  { home: {type:'runnerup', group:'A'}, away: {type:'runnerup', group:'B'} },          // M73
+  { home: {type:'winner',  group:'E'}, away: {type:'third', pool:['A','B','C','D','F']} }, // M74
+  { home: {type:'winner',  group:'F'}, away: {type:'runnerup', group:'C'} },           // M75
+  { home: {type:'winner',  group:'C'}, away: {type:'runnerup', group:'F'} },           // M76
+  { home: {type:'winner',  group:'I'}, away: {type:'third', pool:['C','D','F','G','H']} }, // M77
+  { home: {type:'runnerup', group:'E'}, away: {type:'runnerup', group:'I'} },          // M78
+  { home: {type:'winner',  group:'A'}, away: {type:'third', pool:['C','E','F','H','I']} }, // M79
+  { home: {type:'winner',  group:'L'}, away: {type:'third', pool:['E','H','I','J','K']} }, // M80
+  { home: {type:'winner',  group:'B'}, away: {type:'third', pool:['E','F','G','I','J']} }, // M81
+  { home: {type:'winner',  group:'G'}, away: {type:'third', pool:['A','E','H','I','J']} }, // M82
+  { home: {type:'runnerup', group:'D'}, away: {type:'runnerup', group:'G'} },          // M83
+  { home: {type:'winner',  group:'H'}, away: {type:'runnerup', group:'J'} },           // M84
+  { home: {type:'winner',  group:'J'}, away: {type:'runnerup', group:'H'} },           // M85
+  { home: {type:'winner',  group:'K'}, away: {type:'third', pool:['D','E','I','J','L']} }, // M86
+  { home: {type:'runnerup', group:'K'}, away: {type:'runnerup', group:'L'} },          // M87
+  { home: {type:'winner',  group:'D'}, away: {type:'third', pool:['B','E','F','I','J']} }, // M88
+];
+
+// R16: winner of (M73,M74) vs winner of (M75,M76), etc.
+const R16_PAIRS = [[0,1],[2,3],[4,5],[6,7],[8,9],[10,11],[12,13],[14,15]];
+const QF_PAIRS  = [[0,1],[2,3],[4,5],[6,7]];
+const SF_PAIRS  = [[0,1],[2,3]];
+
+// ── Get best 8 third-placed teams (pts → gd → gf) ────────────────────────────
+function getBest8Third() {
+  const thirds = GROUPS.map(g => {
+    const st = getStandings(g.name);
+    const t  = st[2];
+    return { ...t, groupName: g.name, gd: t.gf - t.ga };
+  });
+  thirds.sort((a,b) => (b.pts - a.pts) || (b.gd - a.gd) || (b.gf - a.gf));
+  return thirds.slice(0, 8);
+}
+
+// ── Assign 8 qualifying 3rd-place teams to their slots (Annex C pool logic) ──
+function assignThirdPlaceTeams(best8) {
+  // Find which R32 slots need a 3rd-place team and their eligible pools
+  const thirdSlots = R32_SLOTS
+    .map((s, i) => {
+      if (s.away.type === 'third') return { slotIdx: i, isHome: false, pool: s.away.pool };
+      if (s.home.type === 'third') return { slotIdx: i, isHome: true,  pool: s.home.pool };
+      return null;
+    })
+    .filter(Boolean);
+
+  const qualifyingGroups = new Set(best8.map(t => t.groupName));
+  const assigned = {};
+  const used     = new Set();
+
+  // Sort by smallest pool first (most constrained first)
+  const slotsByPool = [...thirdSlots].sort((a,b) => a.pool.length - b.pool.length);
+
+  for (const slot of slotsByPool) {
+    const eligible = best8.filter(t =>
+      slot.pool.includes(t.groupName) && !used.has(t.groupName)
+    );
+    if (eligible.length > 0) {
+      // Pick best available (best8 already sorted desc by pts/gd/gf)
+      assigned[slot.slotIdx] = { isHome: slot.isHome, team: eligible[0] };
+      used.add(eligible[0].groupName);
+    }
+  }
+  return assigned;
+}
+
+// ── Main: compute bracket from group standings ────────────────────────────────
+function computeBracketFromGroups() {
+  if (!matches || !bracket) { showToast('⚠ Data not loaded yet'); return; }
+
+  // Build group position map
+  const groupMap = {};
+  GROUPS.forEach(g => {
+    const st = getStandings(g.name);
+    groupMap[g.name] = { winner: st[0], runnerup: st[1], third: st[2] };
+  });
+
+  const best8 = getBest8Third();
+  const thirdAssignments = assignThirdPlaceTeams(best8);
+
+  // Build R32 matches
+  const newR32 = R32_SLOTS.map((slot, i) => {
+    function resolve(desc, slotIdx) {
+      if (!desc) return 'TBD';
+      if (desc.type === 'winner')   return groupMap[desc.group]?.winner?.name  || 'TBD';
+      if (desc.type === 'runnerup') return groupMap[desc.group]?.runnerup?.name || 'TBD';
+      if (desc.type === 'third') {
+        const a = thirdAssignments[slotIdx];
+        return a ? a.team.name : 'TBD';
+      }
+      return 'TBD';
+    }
+    const home = resolve(slot.home, i);
+    const away = resolve(slot.away, i);
+
+    // Preserve existing scores if teams match
+    const ex = bracket.r32?.matches?.[i];
+    const sameTeams = ex && ex.home === home && ex.away === away;
+    return {
+      home, away,
+      homeScore: sameTeams ? ex.homeScore : null,
+      awayScore: sameTeams ? ex.awayScore : null,
+      winner:    sameTeams ? ex.winner    : null,
+      penHome:   sameTeams ? ex.penHome   : null,
+      penAway:   sameTeams ? ex.penAway   : null,
+      penalties: sameTeams ? ex.penalties : false,
+    };
+  });
+
+  bracket.r32.matches = newR32;
+  propagateKnockoutWinners();
+  save();
+  renderAll();
+  if (adminUnlocked) { populateAdminSelect(); }
+  showToast('🏆 Bracket auto-calculated ✓');
+}
+
+// ── Propagate winners through R16 → QF → SF → Final ─────────────────────────
+function getMatchWinner(roundKey, matchIdx) {
+  const m = bracket[roundKey]?.matches?.[matchIdx];
+  if (!m || !m.winner) return null;
+  return m.winner === 'home' ? m.home : m.away;
+}
+
+function makeNextMatch(existing, homeTeam, awayTeam) {
+  const sameTeams = existing && existing.home === homeTeam && existing.away === awayTeam;
+  return {
+    home:      homeTeam || 'TBD',
+    away:      awayTeam || 'TBD',
+    homeScore: sameTeams ? existing.homeScore : null,
+    awayScore: sameTeams ? existing.awayScore : null,
+    winner:    sameTeams ? existing.winner    : null,
+    penHome:   sameTeams ? existing.penHome   : null,
+    penAway:   sameTeams ? existing.penAway   : null,
+    penalties: sameTeams ? existing.penalties : false,
+  };
+}
+
+function propagateKnockoutWinners() {
+  // R32 → R16
+  R16_PAIRS.forEach(([aIdx, bIdx], r16Idx) => {
+    const wA = getMatchWinner('r32', aIdx);
+    const wB = getMatchWinner('r32', bIdx);
+    bracket.r16.matches[r16Idx] = makeNextMatch(bracket.r16.matches[r16Idx], wA, wB);
+  });
+  // R16 → QF
+  QF_PAIRS.forEach(([aIdx, bIdx], qfIdx) => {
+    const wA = getMatchWinner('r16', aIdx);
+    const wB = getMatchWinner('r16', bIdx);
+    bracket.qf.matches[qfIdx] = makeNextMatch(bracket.qf.matches[qfIdx], wA, wB);
+  });
+  // QF → SF
+  SF_PAIRS.forEach(([aIdx, bIdx], sfIdx) => {
+    const wA = getMatchWinner('qf', aIdx);
+    const wB = getMatchWinner('qf', bIdx);
+    bracket.sf.matches[sfIdx] = makeNextMatch(bracket.sf.matches[sfIdx], wA, wB);
+  });
+  // SF → Final
+  const wSF0 = getMatchWinner('sf', 0);
+  const wSF1 = getMatchWinner('sf', 1);
+  bracket.final.matches[0] = makeNextMatch(bracket.final.matches[0], wSF0, wSF1);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 
 function populateAdminSelect(){
   const sel=document.getElementById('admin-match-select');
@@ -1544,6 +1727,8 @@ function updateBracket(){
   m.penalties=pen;
   if(pen){if(!isNaN(ph))m.penHome=ph;if(!isNaN(pa))m.penAway=pa;}
   else{m.penHome=null;m.penAway=null;}
+  // Auto-propagate winners through subsequent rounds
+  propagateKnockoutWinners();
   save();renderAll();showToast('Bracket updated ✓');populateBracketSlots();
 }
 
@@ -1632,7 +1817,6 @@ function renderChannelAdmin(){
   if(!matches) return;
   const container = document.getElementById('channel-admin-list');
   if(!container) return;
-
   const dateFilter = document.getElementById('ch-date-filter');
   const dateOrder=['Jun 12','Jun 13','Jun 14','Jun 15','Jun 16','Jun 17','Jun 18','Jun 19','Jun 20','Jun 21','Jun 22','Jun 23','Jun 24','Jun 25','Jun 26','Jun 27','Jun 28'];
   if(dateFilter.options.length<=1){
@@ -1643,7 +1827,6 @@ function renderChannelAdmin(){
       dateFilter.appendChild(o);
     });
   }
-
   const filterDate = dateFilter.value;
   const upcoming = matches.filter(m=>m.status==='upcoming'&&(!filterDate||m.date===filterDate))
     .sort((a,b)=>{
@@ -1651,12 +1834,10 @@ function renderChannelAdmin(){
       if(di!==0)return di;
       return a.id-b.id;
     });
-
   if(upcoming.length===0){
     container.innerHTML='<div style="color:var(--text-dim);font-size:13px;text-align:center;padding:24px">No upcoming matches.</div>';
     return;
   }
-
   let html='';
   let lastDate='';
   upcoming.forEach(m=>{
@@ -1756,7 +1937,6 @@ db.ref('wc2026').on('value',snap=>{
       document.getElementById('sync-last-time').textContent=
         `Last manual sync: ${data.syncMeta.lastSyncMYT} · Mode: ${data.syncMeta.mode||'—'}`;
     }
-    // Restore auto-sync timestamp if available
     if(data.autoSyncMeta&&data.autoSyncMeta.lastSyncMYT){
       setAutoSyncStatus('ok', `Last synced ${data.autoSyncMeta.lastSyncMYT} (MYT)`);
     }
@@ -1776,9 +1956,7 @@ db.ref('wc2026').on('value',snap=>{
   }
 
   // ── START AUTO-SYNC (once, after data first loads) ──────────
-  // Only start once; Firebase listener fires on every change
   if(!autoSyncTimer && !autoSyncCountdown){
-    // Run first sync after 5 seconds, then every hour
     setAutoSyncStatus('idle','Starting first sync in 5 s…');
     setTimeout(async ()=>{
       await runAutoSync(true);
