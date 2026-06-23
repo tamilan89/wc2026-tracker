@@ -147,8 +147,22 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
 .bracket{display:flex;gap:0;min-width:900px}
 .bracket-round{display:flex;flex-direction:column;flex:1;min-width:160px}
 .round-title{font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.5px;text-align:center;padding:8px 0 16px;border-bottom:1px solid var(--border);margin-bottom:16px}
-.bracket-slots{display:flex;flex-direction:column;justify-content:space-around;height:560px;padding:0 8px;gap:8px}
-.bracket-match{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:border-color .2s}
+.bracket-slots{
+  display:flex;
+  flex-direction:column;
+  justify-content:space-around;
+  height:560px;
+  padding:0 8px;
+  gap:6px;
+}
+.bracket-match{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:8px;
+  overflow:hidden;
+  transition:border-color .2s;
+  min-height:52px;
+}
 .bracket-match:hover{border-color:var(--border-gold)}
 .bracket-team{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-size:12px;font-weight:500;gap:6px}
 .bracket-team:first-child{border-bottom:1px solid var(--border)}
@@ -1219,6 +1233,7 @@ function renderBracket(){
     </div>
     <div class="connector"></div>`;
   }).join('');
+
   const fin=bracket['final'].matches[0];
   html+=`<div class="bracket-round">
     <div class="round-title">Final</div>
