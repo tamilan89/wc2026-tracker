@@ -1186,9 +1186,10 @@ function renderScores(){
 function scoreStr(m,side){
   const score=side==='home'?m.homeScore:m.awayScore;
   const penScore=side==='home'?m.penHome:m.penAway;
-  if(score===null)return '';
+  if(score===null||score===undefined)return '';
   let s=String(score);
-  if(m.penalties&&penScore!==null)s+=` <span class="pen-label">(${penScore})</span>`;
+  if(m.penalties===true && penScore!==null && penScore!==undefined)
+    s+=` <span class="pen-label">(${penScore})</span>`;
   return s;
 }
 
