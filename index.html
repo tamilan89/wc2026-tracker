@@ -522,8 +522,8 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
         </div>
         <div class="score-inputs" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
           <div class="form-group" style="margin-bottom:0">
-            <label>Date</label>
-            <input type="text" id="bracket-date" placeholder="e.g. Jul 4">
+            <label>Date (MYT)</label>
+            <input type="text" id="bracket-date" placeholder="e.g. Jun 29">
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label>Time (MYT)</label>
@@ -731,7 +731,6 @@ let autoSyncCountdown  = null;
 let nextSyncAt         = null;  // Date object
 
 function setAutoSyncStatus(state, text){
-  // state: 'idle' | 'syncing' | 'ok' | 'err'
   const dot  = document.getElementById('autosync-dot');
   const txtEl = document.getElementById('autosync-text');
   if(!dot || !txtEl) return;
@@ -753,7 +752,6 @@ function updateAutoSyncCountdown(){
 }
 
 function scheduleNextAutoSync(){
-  // Clear any previous timer
   if(autoSyncTimer)  clearTimeout(autoSyncTimer);
   if(autoSyncCountdown) clearInterval(autoSyncCountdown);
 
@@ -762,13 +760,12 @@ function scheduleNextAutoSync(){
   updateAutoSyncCountdown();
 
   autoSyncTimer = setTimeout(async ()=>{
-    await runAutoSync();
+    await runAutoSync(true);
     scheduleNextAutoSync();
   }, AUTO_SYNC_INTERVAL_MS);
 }
 
 async function runAutoSync(silent){
-  // silent = called from timer; !silent = user pressed Sync Now in admin
   const btn = document.getElementById('autosync-manual-btn');
   if(btn) btn.disabled = true;
   setAutoSyncStatus('syncing', 'Syncing scores & stats…');
@@ -777,7 +774,6 @@ async function runAutoSync(silent){
     await autoSyncStatsQuiet();
     const t = new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
     setAutoSyncStatus('ok', `Last synced ${t} (MYT)`);
-    // Save sync meta to Firebase
     await db.ref('wc2026/autoSyncMeta').set({
       lastSync: new Date().toISOString(),
       lastSyncMYT: new Date().toLocaleString('en-MY',{timeZone:'Asia/Kuala_Lumpur'})
@@ -793,12 +789,10 @@ async function runAutoSync(silent){
 
 async function triggerManualAutoSync(){
   await runAutoSync(false);
-  // Reset the hourly timer so next auto-sync is 1h from now
   scheduleNextAutoSync();
 }
 
 // ── AUTO-SYNC: MATCH SCORES ──────────────────────────────────
-// Maps football-data.org homeTeam.name / awayTeam.name → our team name keys
 const FD_TEAM_MAP = {
   'Mexico':'Mexico','South Africa':'South Africa','Korea Republic':'South Korea',
   'Czechia':'Czechia','Czech Republic':'Czechia',
@@ -822,17 +816,15 @@ const FD_TEAM_MAP = {
 };
 
 async function autoSyncScores(){
-  // Fetch all WC2026 matches from football-data.org
   const data = await fdFetch('competitions/WC/matches?season=2026');
   const apiMatches = data.matches || [];
 
-  if(!apiMatches.length) return; // Nothing yet
+  if(!apiMatches.length) return;
 
   let changed = false;
 
   apiMatches.forEach(apiM => {
-    // Only process FINISHED or IN_PLAY matches
-    const status = apiM.status; // 'SCHEDULED','TIMED','IN_PLAY','PAUSED','FINISHED','SUSPENDED','POSTPONED','CANCELLED'
+    const status = apiM.status;
     if(status !== 'FINISHED' && status !== 'IN_PLAY' && status !== 'PAUSED') return;
 
     const homeRaw = apiM.homeTeam?.name || '';
@@ -845,13 +837,11 @@ async function autoSyncScores(){
 
     if(homeScore === null || awayScore === null) return;
 
-    // Find matching local match by home+away team names
     const localMatch = matches.find(m =>
       m.home === home && m.away === away
     );
     if(!localMatch) return;
 
-    // Only update if data actually changed
     const newStatus = (status === 'FINISHED') ? 'finished' : 'live';
     if(localMatch.homeScore !== homeScore ||
        localMatch.awayScore !== awayScore ||
@@ -869,7 +859,6 @@ async function autoSyncScores(){
   if(changed){
     lastUpdated = new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
     document.getElementById('last-updated').textContent = lastUpdated;
-    // Save updated matches to Firebase
     await db.ref('wc2026/matches').set(matches);
     await db.ref('wc2026/updated').set(lastUpdated);
     renderAll();
@@ -1094,7 +1083,12 @@ function upgradeBracketData(){
     if(!bracket[r]) bracket[r] = fresh[r];
     if(!Array.isArray(bracket[r].matches)) bracket[r].matches = [];
     fresh[r].matches.forEach((base,i)=>{
-      bracket[r].matches[i] = {...base, ...(bracket[r].matches[i] || {})};
+      if(!bracket[r].matches[i]) {
+        bracket[r].matches[i] = {...base};
+      } else {
+        // Preserve existing data but ensure all fields exist
+        bracket[r].matches[i] = {...base, ...bracket[r].matches[i]};
+      }
       if(!bracket[r].matches[i].path) bracket[r].matches[i].path = defaultBracketPath(r,i);
       if(!bracket[r].matches[i].date) bracket[r].matches[i].date = base.date;
       if(!bracket[r].matches[i].time) bracket[r].matches[i].time = base.time;
@@ -1103,31 +1097,76 @@ function upgradeBracketData(){
   });
 }
 
-function bracketWinnerTeam(m){
+function getBracketWinner(m){
   if(!m || !m.winner) return 'TBD';
   return m.winner === 'home' ? (m.home || 'TBD') : (m.away || 'TBD');
 }
 
+function getBracketWinnerName(m){
+  if(!m) return 'TBD';
+  if(m.winner === 'home') return m.home || 'TBD';
+  if(m.winner === 'away') return m.away || 'TBD';
+  return 'TBD';
+}
+
 function syncBracketAdvancement(round, slot){
-  const flow = {r32:'r16', r16:'qf', qf:'sf', sf:'final'};
-  const nextRound = flow[round];
-  if(!nextRound || !bracket[nextRound]) return;
-  const nextSlot = Math.floor(slot / 2);
-  const nextSide = slot % 2 === 0 ? 'home' : 'away';
-  const winner = bracketWinnerTeam(bracket[round].matches[slot]);
-  if(!bracket[nextRound].matches[nextSlot]) return;
-  bracket[nextRound].matches[nextSlot][nextSide] = winner;
-  const nm = bracket[nextRound].matches[nextSlot];
-  if(nm.winner === nextSide && winner === 'TBD') nm.winner = null;
+  // Map current round to next round
+  const flow = {
+    'r32': { next: 'r16', pairFactor: 2 },
+    'r16': { next: 'qf', pairFactor: 2 },
+    'qf': { next: 'sf', pairFactor: 2 },
+    'sf': { next: 'final', pairFactor: 1 }
+  };
+  
+  const map = flow[round];
+  if(!map) return;
+  
+  const nextRound = map.next;
+  if(!bracket[nextRound]) return;
+  
+  const nextSlot = Math.floor(slot / map.pairFactor);
+  const side = slot % map.pairFactor === 0 ? 'home' : 'away';
+  
+  const currentMatch = bracket[round]?.matches?.[slot];
+  if(!currentMatch) return;
+  
+  const nextMatch = bracket[nextRound]?.matches?.[nextSlot];
+  if(!nextMatch) return;
+  
+  // Get the winner of the current match
+  const winnerName = getBracketWinnerName(currentMatch);
+  
+  // Update the next round match with the winner
+  if (winnerName !== 'TBD') {
+    nextMatch[side] = winnerName;
+    
+    // If both home and away are set in the next match, auto-set winner if possible
+    if (nextMatch.home !== 'TBD' && nextMatch.away !== 'TBD' && nextMatch.home !== nextMatch.away) {
+      // Don't auto-set winner - let admin decide
+    }
+  } else {
+    // If no winner, keep TBD
+    nextMatch[side] = 'TBD';
+  }
+  
+  // If both teams are set, and winner is already set, ensure it's valid
+  if (nextMatch.home !== 'TBD' && nextMatch.away !== 'TBD' && nextMatch.winner) {
+    const winnerName2 = getBracketWinnerName(nextMatch);
+    if (winnerName2 !== nextMatch.home && winnerName2 !== nextMatch.away) {
+      nextMatch.winner = null;
+    }
+  }
 }
 
 function syncAllBracketAdvancement(){
-  ['r32','r16','qf','sf'].forEach(r=>{
+  // Sync from R32 → R16 → QF → SF → Final
+  ['r32','r16','qf','sf'].forEach(r => {
     if(!bracket[r]) return;
-    bracket[r].matches.forEach((_,i)=>syncBracketAdvancement(r,i));
+    bracket[r].matches.forEach((_, i) => {
+      syncBracketAdvancement(r, i);
+    });
   });
 }
-
 
 function getStandings(groupName){
   const g=GROUPS.find(x=>x.name===groupName);
@@ -1295,10 +1334,12 @@ function renderBracket(){
   syncAllBracketAdvancement();
   const c=document.getElementById('bracket-container');
   const rounds=['r32','r16','qf','sf'];
+  
   function matchNumber(round, i){
     const prefix={r32:'R32',r16:'R16',qf:'QF',sf:'SF',final:'FINAL'}[round]||'M';
     return round==='final' ? 'FINAL' : `${prefix}-${i+1}`;
   }
+  
   function nextLabel(round, i){
     if(round==='r32') return `Winner → R16-${Math.floor(i/2)+1} ${i%2===0?'Home':'Away'}`;
     if(round==='r16') return `Winner → QF-${Math.floor(i/2)+1} ${i%2===0?'Home':'Away'}`;
@@ -1306,18 +1347,20 @@ function renderBracket(){
     if(round==='sf')  return `Winner → Final ${i%2===0?'Home':'Away'}`;
     return 'Winner → Champion';
   }
+  
   function card(m, round, i){
+    const hasWinner = m.winner && (m.winner === 'home' || m.winner === 'away');
     return `<div class="bracket-match">
       <div class="bracket-match-meta">
         <span class="bracket-path" title="${m.path||defaultBracketPath(round,i)}">${matchNumber(round,i)} · ${m.path||defaultBracketPath(round,i)}</span>
         <span class="bracket-datetime">${m.date||'Date TBD'} · ${m.time||'Time TBD'}</span>
       </div>
-      <div class="bracket-team ${m.winner==='home'?'winner':''}">
+      <div class="bracket-team ${hasWinner && m.winner==='home'?'winner':''}">
         <span class="bflag">${flag(m.home)}</span>
         <span style="flex:1;font-size:11px">${m.home==='TBD'?'<span class="tbd">TBD</span>':m.home}</span>
         <span class="bscore">${scoreStr(m,'home')}</span>
       </div>
-      <div class="bracket-team ${m.winner==='away'?'winner':''}">
+      <div class="bracket-team ${hasWinner && m.winner==='away'?'winner':''}">
         <span class="bflag">${flag(m.away)}</span>
         <span style="flex:1;font-size:11px">${m.away==='TBD'?'<span class="tbd">TBD</span>':m.away}</span>
         <span class="bscore">${scoreStr(m,'away')}</span>
@@ -1325,6 +1368,7 @@ function renderBracket(){
       <div class="bracket-advances">${nextLabel(round,i)}</div>
     </div>`;
   }
+  
   let html=rounds.map(r=>{
     const rd=bracket[r];
     return `<div class="bracket-round">
@@ -1352,7 +1396,6 @@ function renderBracket(){
   </div>`;
   c.innerHTML=html;
 }
-
 
 function rankSymbol(i){ return i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1); }
 
@@ -1618,15 +1661,14 @@ function loadBracketSlotForm(){
   document.getElementById('bracket-path').value = m.path || defaultBracketPath(r,slot);
   document.getElementById('bracket-date').value = m.date || '';
   document.getElementById('bracket-time').value = m.time || '';
-  document.getElementById('bracket-score-home').value = m.homeScore ?? '';
-  document.getElementById('bracket-score-away').value = m.awayScore ?? '';
+  document.getElementById('bracket-score-home').value = m.homeScore !== null && m.homeScore !== undefined ? m.homeScore : '';
+  document.getElementById('bracket-score-away').value = m.awayScore !== null && m.awayScore !== undefined ? m.awayScore : '';
   document.getElementById('bracket-winner-select').value = m.winner || '';
   document.getElementById('penalty-check').checked = !!m.penalties;
-  document.getElementById('bracket-pen-home').value = m.penHome ?? '';
-  document.getElementById('bracket-pen-away').value = m.penAway ?? '';
+  document.getElementById('bracket-pen-home').value = m.penHome !== null && m.penHome !== undefined ? m.penHome : '';
+  document.getElementById('bracket-pen-away').value = m.penAway !== null && m.penAway !== undefined ? m.penAway : '';
   togglePenaltyFields();
 }
-
 
 function updateMatch(){
   const id=parseInt(document.getElementById('admin-match-select').value);
@@ -1640,7 +1682,7 @@ function updateMatch(){
   if(!isNaN(as))m.awayScore=as;
   if(m.homeScore!==null&&m.awayScore!==null){m.status=isLive?'live':'finished';}
   if(isLive&&tm)m.liveMin=tm;
-  lastUpdated=new Date().toLocaleTimeString();
+  lastUpdated=new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
   document.getElementById('last-updated').textContent=lastUpdated;
   save();renderAll();showToast('Match updated ✓');populateAdminSelect();
 }
@@ -1664,6 +1706,8 @@ function updateBracket(){
   const r=document.getElementById('bracket-round-select').value;
   const slot=parseInt(document.getElementById('bracket-slot-select').value);
   const m=bracket[r].matches[slot];
+  if(!m) return;
+  
   const h=document.getElementById('bracket-home').value.trim();
   const a=document.getElementById('bracket-away').value.trim();
   const path=document.getElementById('bracket-path').value.trim();
@@ -1675,22 +1719,32 @@ function updateBracket(){
   const pen=document.getElementById('penalty-check').checked;
   const ph=parseInt(document.getElementById('bracket-pen-home').value);
   const pa=parseInt(document.getElementById('bracket-pen-away').value);
-  m.home=h || 'TBD';
-  m.away=a || 'TBD';
-  m.path=path || defaultBracketPath(r,slot);
-  m.date=date || m.date || 'TBD';
-  m.time=time || m.time || 'TBD';
-  m.homeScore=!isNaN(hs) ? hs : null;
-  m.awayScore=!isNaN(as) ? as : null;
-  m.winner=w || null;
-  m.penalties=pen;
-  if(pen){m.penHome=!isNaN(ph)?ph:null;m.penAway=!isNaN(pa)?pa:null;}
-  else{m.penHome=null;m.penAway=null;}
+  
+  // Update match data
+  m.home = h || 'TBD';
+  m.away = a || 'TBD';
+  m.path = path || defaultBracketPath(r,slot);
+  m.date = date || m.date || 'TBD';
+  m.time = time || m.time || 'TBD';
+  m.homeScore = !isNaN(hs) ? hs : null;
+  m.awayScore = !isNaN(as) ? as : null;
+  m.winner = w || null;
+  m.penalties = pen;
+  m.penHome = pen && !isNaN(ph) ? ph : null;
+  m.penAway = pen && !isNaN(pa) ? pa : null;
+  
+  // Sync advancement based on this match
   syncBracketAdvancement(r, slot);
+  
+  // Sync all other matches to ensure consistency
   syncAllBracketAdvancement();
-  save();renderAll();showToast('Bracket updated + winner advanced ✓');populateBracketSlots();
+  
+  // Save and update
+  save();
+  renderAll();
+  populateBracketSlots();
+  showToast('✅ Bracket match updated!');
 }
-
 
 function resetBracket(){
   if(!confirm('Reset ALL bracket rounds to TBD? This cannot be undone.'))return;
@@ -1912,7 +1966,6 @@ db.ref('wc2026').on('value',snap=>{
       document.getElementById('sync-last-time').textContent=
         `Last manual sync: ${data.syncMeta.lastSyncMYT} · Mode: ${data.syncMeta.mode||'—'}`;
     }
-    // Restore auto-sync timestamp if available
     if(data.autoSyncMeta&&data.autoSyncMeta.lastSyncMYT){
       setAutoSyncStatus('ok', `Last synced ${data.autoSyncMeta.lastSyncMYT} (MYT)`);
     }
@@ -1931,10 +1984,7 @@ db.ref('wc2026').on('value',snap=>{
     renderChannelAdmin();
   }
 
-  // ── START AUTO-SYNC (once, after data first loads) ──────────
-  // Only start once; Firebase listener fires on every change
   if(!autoSyncTimer && !autoSyncCountdown){
-    // Run first sync after 5 seconds, then every hour
     setAutoSyncStatus('idle','Starting first sync in 5 s…');
     setTimeout(async ()=>{
       await runAutoSync(true);
