@@ -179,15 +179,6 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
 .champion-label{font-size:10px;color:var(--gold);letter-spacing:2px;text-transform:uppercase;font-weight:600;margin-bottom:8px}
 .champion-name{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:var(--text)}
 
-
-/* CLEAR KNOCKOUT BRACKET META */
-.bracket-match-meta{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 10px;background:rgba(255,255,255,0.025);border-bottom:1px solid var(--border);font-size:9px;color:var(--text-muted);font-family:'DM Mono',monospace;letter-spacing:.4px;text-transform:uppercase}
-.bracket-path{color:var(--gold);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92px}
-.bracket-datetime{color:var(--text-dim);white-space:nowrap}
-.bracket-advances{padding:5px 10px;border-top:1px solid var(--border);font-size:9px;color:var(--text-dim);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.4px;background:rgba(201,168,76,0.04)}
-.bracket-team span:nth-child(2){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:700px){.bracket{min-width:1100px}.bracket-round{min-width:190px}.bracket-slots{height:auto;gap:12px;justify-content:flex-start}.final-slot{height:auto}.bracket-match-meta{font-size:8px}.bracket-path{max-width:78px}}
-
 /* STATS BAR */
 .stats-bar{display:flex;gap:16px;margin-bottom:18px;flex-wrap:wrap}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 20px;flex:1;min-width:120px}
@@ -517,20 +508,6 @@ header{padding:32px 0 0;border-bottom:1px solid var(--border)}
           <input type="text" id="bracket-away" placeholder="Team name">
         </div>
         <div class="form-group">
-          <label>Path / Qualification Note</label>
-          <input type="text" id="bracket-path" placeholder="e.g. Winner R32-1 vs Winner R32-2">
-        </div>
-        <div class="score-inputs" style="grid-template-columns:1fr 1fr;margin-bottom:14px">
-          <div class="form-group" style="margin-bottom:0">
-            <label>Date (MYT)</label>
-            <input type="text" id="bracket-date" placeholder="e.g. Jun 29">
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label>Time (MYT)</label>
-            <input type="text" id="bracket-time" placeholder="e.g. 3:00 AM">
-          </div>
-        </div>
-        <div class="form-group">
           <label>Score (Full Time / Extra Time)</label>
           <div class="score-inputs">
             <input type="number" id="bracket-score-home" min="0" placeholder="0" style="text-align:center">
@@ -731,6 +708,7 @@ let autoSyncCountdown  = null;
 let nextSyncAt         = null;  // Date object
 
 function setAutoSyncStatus(state, text){
+  // state: 'idle' | 'syncing' | 'ok' | 'err'
   const dot  = document.getElementById('autosync-dot');
   const txtEl = document.getElementById('autosync-text');
   if(!dot || !txtEl) return;
@@ -752,6 +730,7 @@ function updateAutoSyncCountdown(){
 }
 
 function scheduleNextAutoSync(){
+  // Clear any previous timer
   if(autoSyncTimer)  clearTimeout(autoSyncTimer);
   if(autoSyncCountdown) clearInterval(autoSyncCountdown);
 
@@ -760,12 +739,13 @@ function scheduleNextAutoSync(){
   updateAutoSyncCountdown();
 
   autoSyncTimer = setTimeout(async ()=>{
-    await runAutoSync(true);
+    await runAutoSync();
     scheduleNextAutoSync();
   }, AUTO_SYNC_INTERVAL_MS);
 }
 
 async function runAutoSync(silent){
+  // silent = called from timer; !silent = user pressed Sync Now in admin
   const btn = document.getElementById('autosync-manual-btn');
   if(btn) btn.disabled = true;
   setAutoSyncStatus('syncing', 'Syncing scores & stats…');
@@ -774,6 +754,7 @@ async function runAutoSync(silent){
     await autoSyncStatsQuiet();
     const t = new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
     setAutoSyncStatus('ok', `Last synced ${t} (MYT)`);
+    // Save sync meta to Firebase
     await db.ref('wc2026/autoSyncMeta').set({
       lastSync: new Date().toISOString(),
       lastSyncMYT: new Date().toLocaleString('en-MY',{timeZone:'Asia/Kuala_Lumpur'})
@@ -789,10 +770,12 @@ async function runAutoSync(silent){
 
 async function triggerManualAutoSync(){
   await runAutoSync(false);
+  // Reset the hourly timer so next auto-sync is 1h from now
   scheduleNextAutoSync();
 }
 
 // ── AUTO-SYNC: MATCH SCORES ──────────────────────────────────
+// Maps football-data.org homeTeam.name / awayTeam.name → our team name keys
 const FD_TEAM_MAP = {
   'Mexico':'Mexico','South Africa':'South Africa','Korea Republic':'South Korea',
   'Czechia':'Czechia','Czech Republic':'Czechia',
@@ -816,15 +799,17 @@ const FD_TEAM_MAP = {
 };
 
 async function autoSyncScores(){
+  // Fetch all WC2026 matches from football-data.org
   const data = await fdFetch('competitions/WC/matches?season=2026');
   const apiMatches = data.matches || [];
 
-  if(!apiMatches.length) return;
+  if(!apiMatches.length) return; // Nothing yet
 
   let changed = false;
 
   apiMatches.forEach(apiM => {
-    const status = apiM.status;
+    // Only process FINISHED or IN_PLAY matches
+    const status = apiM.status; // 'SCHEDULED','TIMED','IN_PLAY','PAUSED','FINISHED','SUSPENDED','POSTPONED','CANCELLED'
     if(status !== 'FINISHED' && status !== 'IN_PLAY' && status !== 'PAUSED') return;
 
     const homeRaw = apiM.homeTeam?.name || '';
@@ -837,11 +822,13 @@ async function autoSyncScores(){
 
     if(homeScore === null || awayScore === null) return;
 
+    // Find matching local match by home+away team names
     const localMatch = matches.find(m =>
       m.home === home && m.away === away
     );
     if(!localMatch) return;
 
+    // Only update if data actually changed
     const newStatus = (status === 'FINISHED') ? 'finished' : 'live';
     if(localMatch.homeScore !== homeScore ||
        localMatch.awayScore !== awayScore ||
@@ -859,6 +846,7 @@ async function autoSyncScores(){
   if(changed){
     lastUpdated = new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
     document.getElementById('last-updated').textContent = lastUpdated;
+    // Save updated matches to Firebase
     await db.ref('wc2026/matches').set(matches);
     await db.ref('wc2026/updated').set(lastUpdated);
     renderAll();
@@ -1037,7 +1025,7 @@ function save(){
     matches, bracket,
     stats: statsData,
     channels: channelData,
-    version:'myt5',
+    version:'myt4',
     updated: new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'})
   });
 }
@@ -1046,126 +1034,17 @@ function saveStats(){
 }
 
 function initBracket(){
-  const roundInfo = {
-    r32:   {label:'Round of 32',    size:16, date:'Jun 29–Jul 1', time:'TBD'},
-    r16:   {label:'Round of 16',    size:8,  date:'Jul 4–Jul 7',  time:'TBD'},
-    qf:    {label:'Quarter Finals', size:4,  date:'Jul 10–Jul 11', time:'TBD'},
-    sf:    {label:'Semi Finals',    size:2,  date:'Jul 14–Jul 15', time:'TBD'},
-    final: {label:'Final',          size:1,  date:'Jul 19',        time:'TBD'}
-  };
+  const rounds=['r32','r16','qf','sf','final'];
+  const sizes =[16,8,4,2,1];
+  const labels=['Round of 32','Round of 16','Quarter Finals','Semi Finals','Final'];
   const b={};
-  Object.entries(roundInfo).forEach(([r,info])=>{
-    b[r]={label:info.label,matches:[]};
-    for(let s=0;s<info.size;s++){
-      b[r].matches.push({
-        home:'TBD',away:'TBD',homeScore:null,awayScore:null,winner:null,
-        penHome:null,penAway:null,penalties:false,
-        date:info.date,time:info.time,path:defaultBracketPath(r,s),venue:'',note:''
-      });
+  rounds.forEach((r,i)=>{
+    b[r]={label:labels[i],matches:[]};
+    for(let s=0;s<sizes[i];s++){
+      b[r].matches.push({home:'TBD',away:'TBD',homeScore:null,awayScore:null,winner:null,penHome:null,penAway:null,penalties:false});
     }
   });
   return b;
-}
-
-function defaultBracketPath(round, slot){
-  if(round === 'r32') return `R32-${slot+1}`;
-  if(round === 'r16') return `Winner R32-${slot*2+1} vs Winner R32-${slot*2+2}`;
-  if(round === 'qf')  return `Winner R16-${slot*2+1} vs Winner R16-${slot*2+2}`;
-  if(round === 'sf')  return `Winner QF-${slot*2+1} vs Winner QF-${slot*2+2}`;
-  if(round === 'final') return 'Winner SF-1 vs Winner SF-2';
-  return `Match ${slot+1}`;
-}
-
-function upgradeBracketData(){
-  if(!bracket) bracket = initBracket();
-  const fresh = initBracket();
-  Object.keys(fresh).forEach(r=>{
-    if(!bracket[r]) bracket[r] = fresh[r];
-    if(!Array.isArray(bracket[r].matches)) bracket[r].matches = [];
-    fresh[r].matches.forEach((base,i)=>{
-      if(!bracket[r].matches[i]) {
-        bracket[r].matches[i] = {...base};
-      } else {
-        // Preserve existing data but ensure all fields exist
-        bracket[r].matches[i] = {...base, ...bracket[r].matches[i]};
-      }
-      if(!bracket[r].matches[i].path) bracket[r].matches[i].path = defaultBracketPath(r,i);
-      if(!bracket[r].matches[i].date) bracket[r].matches[i].date = base.date;
-      if(!bracket[r].matches[i].time) bracket[r].matches[i].time = base.time;
-    });
-    bracket[r].matches = bracket[r].matches.slice(0, fresh[r].matches.length);
-  });
-}
-
-function getBracketWinner(m){
-  if(!m || !m.winner) return 'TBD';
-  return m.winner === 'home' ? (m.home || 'TBD') : (m.away || 'TBD');
-}
-
-function getBracketWinnerName(m){
-  if(!m) return 'TBD';
-  if(m.winner === 'home') return m.home || 'TBD';
-  if(m.winner === 'away') return m.away || 'TBD';
-  return 'TBD';
-}
-
-function syncBracketAdvancement(round, slot){
-  // Map current round to next round
-  const flow = {
-    'r32': { next: 'r16', pairFactor: 2 },
-    'r16': { next: 'qf', pairFactor: 2 },
-    'qf': { next: 'sf', pairFactor: 2 },
-    'sf': { next: 'final', pairFactor: 1 }
-  };
-  
-  const map = flow[round];
-  if(!map) return;
-  
-  const nextRound = map.next;
-  if(!bracket[nextRound]) return;
-  
-  const nextSlot = Math.floor(slot / map.pairFactor);
-  const side = slot % map.pairFactor === 0 ? 'home' : 'away';
-  
-  const currentMatch = bracket[round]?.matches?.[slot];
-  if(!currentMatch) return;
-  
-  const nextMatch = bracket[nextRound]?.matches?.[nextSlot];
-  if(!nextMatch) return;
-  
-  // Get the winner of the current match
-  const winnerName = getBracketWinnerName(currentMatch);
-  
-  // Update the next round match with the winner
-  if (winnerName !== 'TBD') {
-    nextMatch[side] = winnerName;
-    
-    // If both home and away are set in the next match, auto-set winner if possible
-    if (nextMatch.home !== 'TBD' && nextMatch.away !== 'TBD' && nextMatch.home !== nextMatch.away) {
-      // Don't auto-set winner - let admin decide
-    }
-  } else {
-    // If no winner, keep TBD
-    nextMatch[side] = 'TBD';
-  }
-  
-  // If both teams are set, and winner is already set, ensure it's valid
-  if (nextMatch.home !== 'TBD' && nextMatch.away !== 'TBD' && nextMatch.winner) {
-    const winnerName2 = getBracketWinnerName(nextMatch);
-    if (winnerName2 !== nextMatch.home && winnerName2 !== nextMatch.away) {
-      nextMatch.winner = null;
-    }
-  }
-}
-
-function syncAllBracketAdvancement(){
-  // Sync from R32 → R16 → QF → SF → Final
-  ['r32','r16','qf','sf'].forEach(r => {
-    if(!bracket[r]) return;
-    bracket[r].matches.forEach((_, i) => {
-      syncBracketAdvancement(r, i);
-    });
-  });
 }
 
 function getStandings(groupName){
@@ -1330,51 +1209,26 @@ function scoreStr(m,side){
 }
 
 function renderBracket(){
-  upgradeBracketData();
-  syncAllBracketAdvancement();
   const c=document.getElementById('bracket-container');
   const rounds=['r32','r16','qf','sf'];
-  
-  function matchNumber(round, i){
-    const prefix={r32:'R32',r16:'R16',qf:'QF',sf:'SF',final:'FINAL'}[round]||'M';
-    return round==='final' ? 'FINAL' : `${prefix}-${i+1}`;
-  }
-  
-  function nextLabel(round, i){
-    if(round==='r32') return `Winner → R16-${Math.floor(i/2)+1} ${i%2===0?'Home':'Away'}`;
-    if(round==='r16') return `Winner → QF-${Math.floor(i/2)+1} ${i%2===0?'Home':'Away'}`;
-    if(round==='qf')  return `Winner → SF-${Math.floor(i/2)+1} ${i%2===0?'Home':'Away'}`;
-    if(round==='sf')  return `Winner → Final ${i%2===0?'Home':'Away'}`;
-    return 'Winner → Champion';
-  }
-  
-  function card(m, round, i){
-    const hasWinner = m.winner && (m.winner === 'home' || m.winner === 'away');
-    return `<div class="bracket-match">
-      <div class="bracket-match-meta">
-        <span class="bracket-path" title="${m.path||defaultBracketPath(round,i)}">${matchNumber(round,i)} · ${m.path||defaultBracketPath(round,i)}</span>
-        <span class="bracket-datetime">${m.date||'Date TBD'} · ${m.time||'Time TBD'}</span>
-      </div>
-      <div class="bracket-team ${hasWinner && m.winner==='home'?'winner':''}">
-        <span class="bflag">${flag(m.home)}</span>
-        <span style="flex:1;font-size:11px">${m.home==='TBD'?'<span class="tbd">TBD</span>':m.home}</span>
-        <span class="bscore">${scoreStr(m,'home')}</span>
-      </div>
-      <div class="bracket-team ${hasWinner && m.winner==='away'?'winner':''}">
-        <span class="bflag">${flag(m.away)}</span>
-        <span style="flex:1;font-size:11px">${m.away==='TBD'?'<span class="tbd">TBD</span>':m.away}</span>
-        <span class="bscore">${scoreStr(m,'away')}</span>
-      </div>
-      <div class="bracket-advances">${nextLabel(round,i)}</div>
-    </div>`;
-  }
-  
   let html=rounds.map(r=>{
     const rd=bracket[r];
     return `<div class="bracket-round">
       <div class="round-title">${rd.label}</div>
       <div class="bracket-slots">
-        ${rd.matches.map((m,i)=>card(m,r,i)).join('')}
+        ${rd.matches.map(m=>`
+          <div class="bracket-match">
+            <div class="bracket-team ${m.winner==='home'?'winner':''}">
+              <span class="bflag">${flag(m.home)}</span>
+              <span style="flex:1;font-size:11px">${m.home==='TBD'?'<span class="tbd">TBD</span>':m.home}</span>
+              <span class="bscore">${scoreStr(m,'home')}</span>
+            </div>
+            <div class="bracket-team ${m.winner==='away'?'winner':''}">
+              <span class="bflag">${flag(m.away)}</span>
+              <span style="flex:1;font-size:11px">${m.away==='TBD'?'<span class="tbd">TBD</span>':m.away}</span>
+              <span class="bscore">${scoreStr(m,'away')}</span>
+            </div>
+          </div>`).join('')}
       </div>
     </div>
     <div class="connector"></div>`;
@@ -1384,10 +1238,21 @@ function renderBracket(){
   html+=`<div class="bracket-round">
     <div class="round-title">Final</div>
     <div class="bracket-slots">
-      ${card(fin,'final',0)}
+      <div class="bracket-match">
+        <div class="bracket-team ${fin.winner==='home'?'winner':''}">
+          <span class="bflag">${flag(fin.home)}</span>
+          <span style="flex:1;font-size:11px">${fin.home==='TBD'?'<span class="tbd">TBD</span>':fin.home}</span>
+          <span class="bscore">${scoreStr(fin,'home')}</span>
+        </div>
+        <div class="bracket-team ${fin.winner==='away'?'winner':''}">
+          <span class="bflag">${flag(fin.away)}</span>
+          <span style="flex:1;font-size:11px">${fin.away==='TBD'?'<span class="tbd">TBD</span>':fin.away}</span>
+          <span class="bscore">${scoreStr(fin,'away')}</span>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="final-slot">
+  <div style="display:flex;align-items:center;justify-content:center;height:560px;padding:0 8px">
     <div class="champion-card">
       <span class="trophy">🏆</span>
       <div class="champion-label">Champion</div>
@@ -1641,34 +1506,11 @@ function populateAdminSelect(){
 }
 
 function populateBracketSlots(){
-  upgradeBracketData();
   const r=document.getElementById('bracket-round-select').value;
   const sel=document.getElementById('bracket-slot-select');
-  sel.innerHTML=bracket[r].matches.map((m,i)=>`<option value="${i}">${defaultBracketPath(r,i)}: ${m.home} vs ${m.away}</option>`).join('');
-  loadBracketSlotForm();
+  sel.innerHTML=bracket[r].matches.map((m,i)=>`<option value="${i}">Match ${i+1}: ${m.home} vs ${m.away}</option>`).join('');
 }
 document.getElementById('bracket-round-select').addEventListener('change',populateBracketSlots);
-document.getElementById('bracket-slot-select').addEventListener('change',loadBracketSlotForm);
-
-function loadBracketSlotForm(){
-  if(!bracket) return;
-  const r=document.getElementById('bracket-round-select').value;
-  const slot=parseInt(document.getElementById('bracket-slot-select').value||'0');
-  const m=bracket[r].matches[slot];
-  if(!m) return;
-  document.getElementById('bracket-home').value = m.home === 'TBD' ? '' : m.home;
-  document.getElementById('bracket-away').value = m.away === 'TBD' ? '' : m.away;
-  document.getElementById('bracket-path').value = m.path || defaultBracketPath(r,slot);
-  document.getElementById('bracket-date').value = m.date || '';
-  document.getElementById('bracket-time').value = m.time || '';
-  document.getElementById('bracket-score-home').value = m.homeScore !== null && m.homeScore !== undefined ? m.homeScore : '';
-  document.getElementById('bracket-score-away').value = m.awayScore !== null && m.awayScore !== undefined ? m.awayScore : '';
-  document.getElementById('bracket-winner-select').value = m.winner || '';
-  document.getElementById('penalty-check').checked = !!m.penalties;
-  document.getElementById('bracket-pen-home').value = m.penHome !== null && m.penHome !== undefined ? m.penHome : '';
-  document.getElementById('bracket-pen-away').value = m.penAway !== null && m.penAway !== undefined ? m.penAway : '';
-  togglePenaltyFields();
-}
 
 function updateMatch(){
   const id=parseInt(document.getElementById('admin-match-select').value);
@@ -1682,7 +1524,7 @@ function updateMatch(){
   if(!isNaN(as))m.awayScore=as;
   if(m.homeScore!==null&&m.awayScore!==null){m.status=isLive?'live':'finished';}
   if(isLive&&tm)m.liveMin=tm;
-  lastUpdated=new Date().toLocaleTimeString('en-MY',{timeZone:'Asia/Kuala_Lumpur'});
+  lastUpdated=new Date().toLocaleTimeString();
   document.getElementById('last-updated').textContent=lastUpdated;
   save();renderAll();showToast('Match updated ✓');populateAdminSelect();
 }
@@ -1702,48 +1544,24 @@ function resetMatch(){
 }
 
 function updateBracket(){
-  upgradeBracketData();
   const r=document.getElementById('bracket-round-select').value;
   const slot=parseInt(document.getElementById('bracket-slot-select').value);
   const m=bracket[r].matches[slot];
-  if(!m) return;
-  
   const h=document.getElementById('bracket-home').value.trim();
   const a=document.getElementById('bracket-away').value.trim();
-  const path=document.getElementById('bracket-path').value.trim();
-  const date=document.getElementById('bracket-date').value.trim();
-  const time=document.getElementById('bracket-time').value.trim();
   const hs=parseInt(document.getElementById('bracket-score-home').value);
   const as=parseInt(document.getElementById('bracket-score-away').value);
   const w=document.getElementById('bracket-winner-select').value;
   const pen=document.getElementById('penalty-check').checked;
   const ph=parseInt(document.getElementById('bracket-pen-home').value);
   const pa=parseInt(document.getElementById('bracket-pen-away').value);
-  
-  // Update match data
-  m.home = h || 'TBD';
-  m.away = a || 'TBD';
-  m.path = path || defaultBracketPath(r,slot);
-  m.date = date || m.date || 'TBD';
-  m.time = time || m.time || 'TBD';
-  m.homeScore = !isNaN(hs) ? hs : null;
-  m.awayScore = !isNaN(as) ? as : null;
-  m.winner = w || null;
-  m.penalties = pen;
-  m.penHome = pen && !isNaN(ph) ? ph : null;
-  m.penAway = pen && !isNaN(pa) ? pa : null;
-  
-  // Sync advancement based on this match
-  syncBracketAdvancement(r, slot);
-  
-  // Sync all other matches to ensure consistency
-  syncAllBracketAdvancement();
-  
-  // Save and update
-  save();
-  renderAll();
-  populateBracketSlots();
-  showToast('✅ Bracket match updated!');
+  if(h)m.home=h;if(a)m.away=a;
+  if(!isNaN(hs))m.homeScore=hs;if(!isNaN(as))m.awayScore=as;
+  if(w)m.winner=w;
+  m.penalties=pen;
+  if(pen){if(!isNaN(ph))m.penHome=ph;if(!isNaN(pa))m.penAway=pa;}
+  else{m.penHome=null;m.penAway=null;}
+  save();renderAll();showToast('Bracket updated ✓');populateBracketSlots();
 }
 
 function resetBracket(){
@@ -1940,11 +1758,9 @@ document.getElementById('scores-container').innerHTML=
 
 db.ref('wc2026').on('value',snap=>{
   const data=snap.val();
-  if(data&&data.matches&&data.bracket&&(data.version==='myt2'||data.version==='myt3'||data.version==='myt4'||data.version==='myt5')){
+  if(data&&data.matches&&data.bracket&&(data.version==='myt2'||data.version==='myt3'||data.version==='myt4')){
     matches=data.matches;
     bracket=data.bracket;
-    upgradeBracketData();
-    syncAllBracketAdvancement();
     lastUpdated=data.updated||'—';
     if(data.stats){
       statsData=data.stats;
@@ -1966,6 +1782,7 @@ db.ref('wc2026').on('value',snap=>{
       document.getElementById('sync-last-time').textContent=
         `Last manual sync: ${data.syncMeta.lastSyncMYT} · Mode: ${data.syncMeta.mode||'—'}`;
     }
+    // Restore auto-sync timestamp if available
     if(data.autoSyncMeta&&data.autoSyncMeta.lastSyncMYT){
       setAutoSyncStatus('ok', `Last synced ${data.autoSyncMeta.lastSyncMYT} (MYT)`);
     }
@@ -1984,7 +1801,10 @@ db.ref('wc2026').on('value',snap=>{
     renderChannelAdmin();
   }
 
+  // ── START AUTO-SYNC (once, after data first loads) ──────────
+  // Only start once; Firebase listener fires on every change
   if(!autoSyncTimer && !autoSyncCountdown){
+    // Run first sync after 5 seconds, then every hour
     setAutoSyncStatus('idle','Starting first sync in 5 s…');
     setTimeout(async ()=>{
       await runAutoSync(true);
